@@ -61,6 +61,13 @@ export default {
 					'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
 					border: 'hsl(var(--sidebar-border))',
 					ring: 'hsl(var(--sidebar-ring))'
+				},
+				telegram: {
+					blue: '#0088CC',
+					'dark-gray': '#2B2B2B',
+					'light-gray': '#5F5F5F',
+					white: '#FFFFFF',
+					online: '#00D4AA'
 				}
 			},
 			borderRadius: {
