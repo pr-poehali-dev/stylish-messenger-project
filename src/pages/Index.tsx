@@ -1,13 +1,22 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
+import { Card, CardContent } from '@/components/ui/card';
+import { Textarea } from '@/components/ui/textarea';
 import Icon from '@/components/ui/icon';
+
+interface Message {
+  id: string;
+  text: string;
+  sender: 'me' | 'ai' | 'other';
+  time: string;
+  username?: string;
+}
 
 interface Chat {
   id: string;
@@ -18,7 +27,8 @@ interface Chat {
   unread?: number;
   online?: boolean;
   verified?: boolean;
-  type: 'personal' | 'group' | 'channel';
+  type: 'personal' | 'group' | 'channel' | 'ai';
+  messages: Message[];
 }
 
 interface User {
@@ -31,77 +41,334 @@ interface User {
 }
 
 export default function Index() {
-  const [selectedChat, setSelectedChat] = useState<string | null>('1');
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [registrationStep, setRegistrationStep] = useState<'phone' | 'code' | 'profile'>('phone');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [username, setUsername] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [usernameError, setUsernameError] = useState('');
+  
+  const [selectedChat, setSelectedChat] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState('chats');
-  const [showRegistration, setShowRegistration] = useState(false);
-  const [showCreateGroup, setShowCreateGroup] = useState(false);
-  const [username, setUsername] = useState('');
-  const [currentUser] = useState<User>({
-    id: '1',
-    username: 'yura_dev',
-    name: 'Юра',
-    verified: true,
-    online: true
-  });
+  const [newMessage, setNewMessage] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const [chats] = useState<Chat[]>([
-    {
-      id: '1',
-      name: 'Анна Смирнова',
-      lastMessage: 'Привет! Как дела?',
-      time: '14:32',
-      unread: 2,
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [chats, setChats] = useState<Chat[]>([]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chats]);
+
+  const initializeChats = (user: User) => {
+    const aiChat: Chat = {
+      id: 'ai-assistant',
+      name: 'ИИ Помощник',
+      lastMessage: 'Привет! Я готов помочь тебе с любыми вопросами!',
+      time: new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' }),
       online: true,
-      verified: false,
-      type: 'personal'
-    },
-    {
-      id: '2', 
-      name: 'Команда разработки',
-      lastMessage: 'Михаил: Новая версия готова к тестированию',
-      time: '13:45',
-      unread: 5,
-      type: 'group'
-    },
-    {
-      id: '3',
-      name: 'Новости Tech',
-      lastMessage: 'Обновление React 19 уже доступно!',
-      time: '12:20',
       verified: true,
-      type: 'channel'
-    },
-    {
-      id: '4',
-      name: 'Дмитрий Петров',
-      lastMessage: 'Спасибо за помощь вчера! 👍',
-      time: '11:15',
-      online: false,
-      verified: true,
-      type: 'personal'
-    }
-  ]);
+      type: 'ai',
+      messages: [
+        {
+          id: '1',
+          text: `Привет, ${user.name}! 👋 Я твой личный ИИ-помощник. Могу помочь с вопросами, задачами, или просто поболтать. Чем займёмся?`,
+          sender: 'ai',
+          time: new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })
+        }
+      ]
+    };
 
-  const [messages] = useState([
-    { id: '1', text: 'Привет! Как дела?', sender: 'other', time: '14:30' },
-    { id: '2', text: 'Привет! Всё отлично, работаю над новым проектом', sender: 'me', time: '14:31' },
-    { id: '3', text: 'Звучит интересно! Расскажешь подробнее?', sender: 'other', time: '14:32' }
-  ]);
+    const sampleChats: Chat[] = [
+      {
+        id: '1',
+        name: 'Анна Смирнова',
+        lastMessage: 'Привет! Как дела с проектом?',
+        time: '14:32',
+        unread: 2,
+        online: true,
+        verified: false,
+        type: 'personal',
+        messages: [
+          { id: '1', text: 'Привет! Как дела с проектом?', sender: 'other', time: '14:30', username: 'anna_dev' },
+          { id: '2', text: 'Привет! Всё идёт по плану, скоро покажу результат', sender: 'me', time: '14:31' }
+        ]
+      },
+      {
+        id: '2',
+        name: 'Команда разработки',
+        lastMessage: 'Михаил: Встреча в 16:00',
+        time: '13:45',
+        unread: 3,
+        type: 'group',
+        messages: [
+          { id: '1', text: 'Всем привет! Сегодня встреча в 16:00', sender: 'other', time: '13:44', username: 'mikhail_pm' },
+          { id: '2', text: 'Буду!', sender: 'me', time: '13:45' }
+        ]
+      }
+    ];
+
+    setChats([aiChat, ...sampleChats]);
+    setSelectedChat('ai-assistant');
+  };
+
+  const handlePhoneSubmit = () => {
+    if (phoneNumber.length < 10) {
+      alert('Введите корректный номер телефона');
+      return;
+    }
+    setRegistrationStep('code');
+  };
+
+  const handleCodeSubmit = () => {
+    if (verificationCode !== '1234') {
+      alert('Неверный код. Попробуйте 1234');
+      return;
+    }
+    setRegistrationStep('profile');
+  };
+
+  const checkUsername = async (username: string) => {
+    const forbiddenUsernames = ['admin', 'support', 'bot', 'api', 'help', 'news'];
+    if (forbiddenUsernames.includes(username.toLowerCase())) {
+      return false;
+    }
+    return true;
+  };
+
+  const handleProfileSubmit = async () => {
+    if (!username || !fullName) {
+      alert('Заполните все поля');
+      return;
+    }
+
+    const isUsernameAvailable = await checkUsername(username);
+    if (!isUsernameAvailable) {
+      setUsernameError('Этот юзернейм уже занят');
+      return;
+    }
+
+    const user: User = {
+      id: Date.now().toString(),
+      username,
+      name: fullName,
+      verified: Math.random() > 0.7,
+      online: true
+    };
+
+    setCurrentUser(user);
+    initializeChats(user);
+    setIsAuthenticated(true);
+  };
+
+  const generateAIResponse = async (userMessage: string): Promise<string> => {
+    setIsTyping(true);
+    
+    await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000));
+    
+    const responses = [
+      `Интересный вопрос! ${userMessage.toLowerCase().includes('как') ? 'Вот несколько способов решения...' : 'Давай разберёмся вместе.'}`,
+      `Понятно! Касательно "${userMessage}", могу сказать следующее...`,
+      `Отличная мысль! Это напоминает мне о том, что...`,
+      `Хороший вопрос про "${userMessage.slice(0, 30)}...". По моему мнению...`,
+      `Ого, интересно! Давай подумаем над этим вместе.`,
+      `Это важная тема. Вот что я думаю по этому поводу...`,
+      `Круто, что ты спрашиваешь об этом! Моё мнение такое...`
+    ];
+
+    if (userMessage.toLowerCase().includes('привет') || userMessage.toLowerCase().includes('здравствуй')) {
+      return 'Привет! 😊 Рад тебя видеть! Как дела? Чем могу помочь?';
+    }
+
+    if (userMessage.toLowerCase().includes('как дела')) {
+      return 'У меня всё отлично! Готов помочь с любыми задачами. А у тебя как дела?';
+    }
+
+    if (userMessage.toLowerCase().includes('спасибо')) {
+      return 'Всегда пожалуйста! Рад был помочь. Есть ещё вопросы? 😊';
+    }
+
+    return responses[Math.floor(Math.random() * responses.length)];
+  };
+
+  const handleSendMessage = async () => {
+    if (!newMessage.trim() || !selectedChat) return;
+
+    const messageTime = new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      text: newMessage,
+      sender: 'me',
+      time: messageTime
+    };
+
+    setChats(prevChats => 
+      prevChats.map(chat => 
+        chat.id === selectedChat 
+          ? {
+              ...chat,
+              messages: [...chat.messages, userMessage],
+              lastMessage: newMessage,
+              time: messageTime
+            }
+          : chat
+      )
+    );
+
+    const messageCopy = newMessage;
+    setNewMessage('');
+
+    if (selectedChat === 'ai-assistant') {
+      const aiResponse = await generateAIResponse(messageCopy);
+      setIsTyping(false);
+      
+      const aiMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        text: aiResponse,
+        sender: 'ai',
+        time: new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })
+      };
+
+      setChats(prevChats => 
+        prevChats.map(chat => 
+          chat.id === selectedChat 
+            ? {
+                ...chat,
+                messages: [...chat.messages, aiMessage],
+                lastMessage: aiResponse,
+                time: aiMessage.time
+              }
+            : chat
+        )
+      );
+    }
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  };
 
   const filteredChats = chats.filter(chat => 
     chat.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleUsernameCheck = () => {
-    if (username === 'admin' || username === 'support') {
-      alert('Этот юзернейм уже занят. Попробуйте другой.');
-      return;
-    }
-    alert(`Юзернейм @${username} свободен! Регистрация завершена.`);
-    setShowRegistration(false);
-    setUsername('');
-  };
+  const selectedChatData = chats.find(chat => chat.id === selectedChat);
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-telegram-blue to-blue-600 flex items-center justify-center p-4">
+        <Card className="w-full max-w-md">
+          <CardContent className="p-8">
+            <div className="text-center mb-8">
+              <Icon name="MessageCircle" size={48} className="mx-auto mb-4 text-telegram-blue" />
+              <h1 className="text-2xl font-bold text-telegram-dark-gray mb-2">Untitled</h1>
+              <p className="text-telegram-light-gray">Современный мессенджер</p>
+            </div>
+
+            {registrationStep === 'phone' && (
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-telegram-dark-gray mb-2 block">
+                    Номер телефона
+                  </label>
+                  <Input
+                    type="tel"
+                    placeholder="+7 (999) 123-45-67"
+                    value={phoneNumber}
+                    onChange={(e) => setPhoneNumber(e.target.value)}
+                    className="text-center"
+                  />
+                </div>
+                <Button 
+                  onClick={handlePhoneSubmit}
+                  className="w-full bg-telegram-blue hover:bg-blue-600"
+                  size="lg"
+                >
+                  Получить код
+                </Button>
+              </div>
+            )}
+
+            {registrationStep === 'code' && (
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-telegram-dark-gray mb-2 block">
+                    Код подтверждения
+                  </label>
+                  <p className="text-xs text-telegram-light-gray mb-3">
+                    Отправлен на {phoneNumber} (попробуйте 1234)
+                  </p>
+                  <Input
+                    type="text"
+                    placeholder="1234"
+                    value={verificationCode}
+                    onChange={(e) => setVerificationCode(e.target.value)}
+                    className="text-center text-lg tracking-widest"
+                    maxLength={4}
+                  />
+                </div>
+                <Button 
+                  onClick={handleCodeSubmit}
+                  className="w-full bg-telegram-blue hover:bg-blue-600"
+                  size="lg"
+                >
+                  Подтвердить
+                </Button>
+              </div>
+            )}
+
+            {registrationStep === 'profile' && (
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-telegram-dark-gray mb-2 block">
+                    Имя и фамилия
+                  </label>
+                  <Input
+                    placeholder="Иван Иванов"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-telegram-dark-gray mb-2 block">
+                    Юзернейм
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-telegram-light-gray">@</span>
+                    <Input
+                      placeholder="username"
+                      value={username}
+                      onChange={(e) => {
+                        setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''));
+                        setUsernameError('');
+                      }}
+                      className="pl-8"
+                    />
+                  </div>
+                  {usernameError && (
+                    <p className="text-xs text-red-500 mt-1">{usernameError}</p>
+                  )}
+                </div>
+                <Button 
+                  onClick={handleProfileSubmit}
+                  className="w-full bg-telegram-blue hover:bg-blue-600"
+                  size="lg"
+                >
+                  Завершить регистрацию
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen bg-white">
@@ -111,57 +378,9 @@ export default function Index() {
         <div className="p-4 border-b border-gray-200">
           <div className="flex items-center justify-between mb-4">
             <h1 className="text-xl font-semibold text-telegram-dark-gray">Untitled</h1>
-            <div className="flex items-center gap-2">
-              <Dialog open={showCreateGroup} onOpenChange={setShowCreateGroup}>
-                <DialogTrigger asChild>
-                  <Button variant="ghost" size="sm" className="text-telegram-blue hover:bg-blue-50">
-                    <Icon name="Plus" size={20} />
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-md">
-                  <DialogHeader>
-                    <DialogTitle>Создать</DialogTitle>
-                  </DialogHeader>
-                  <div className="space-y-3">
-                    <Button className="w-full justify-start bg-telegram-blue hover:bg-blue-600" onClick={() => setShowCreateGroup(false)}>
-                      <Icon name="Users" size={16} className="mr-2" />
-                      Новая группа
-                    </Button>
-                    <Button variant="outline" className="w-full justify-start" onClick={() => setShowCreateGroup(false)}>
-                      <Icon name="Radio" size={16} className="mr-2" />
-                      Новый канал
-                    </Button>
-                  </div>
-                </DialogContent>
-              </Dialog>
-
-              <Dialog open={showRegistration} onOpenChange={setShowRegistration}>
-                <DialogTrigger asChild>
-                  <Button variant="ghost" size="sm" className="text-telegram-blue hover:bg-blue-50">
-                    <Icon name="UserPlus" size={20} />
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-md">
-                  <DialogHeader>
-                    <DialogTitle>Регистрация</DialogTitle>
-                  </DialogHeader>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="text-sm font-medium text-telegram-dark-gray">Выберите юзернейм</label>
-                      <Input
-                        placeholder="@username"
-                        value={username}
-                        onChange={(e) => setUsername(e.target.value.replace('@', ''))}
-                        className="mt-1"
-                      />
-                    </div>
-                    <Button onClick={handleUsernameCheck} className="w-full bg-telegram-blue hover:bg-blue-600">
-                      Проверить доступность
-                    </Button>
-                  </div>
-                </DialogContent>
-              </Dialog>
-            </div>
+            <Button variant="ghost" size="sm" className="text-telegram-blue hover:bg-blue-50">
+              <Icon name="Plus" size={20} />
+            </Button>
           </div>
 
           {/* Search */}
@@ -196,9 +415,8 @@ export default function Index() {
                 >
                   <div className="relative">
                     <Avatar className="h-12 w-12">
-                      <AvatarImage src={chat.avatar} />
-                      <AvatarFallback className="bg-telegram-blue text-white font-medium">
-                        {chat.name.split(' ').map(n => n[0]).join('')}
+                      <AvatarFallback className={`${chat.type === 'ai' ? 'bg-gradient-to-br from-purple-500 to-blue-500' : 'bg-telegram-blue'} text-white font-medium`}>
+                        {chat.type === 'ai' ? '🤖' : chat.name.split(' ').map(n => n[0]).join('')}
                       </AvatarFallback>
                     </Avatar>
                     {chat.online && (
@@ -216,7 +434,10 @@ export default function Index() {
                       )}
                     </div>
                     <p className="text-sm text-telegram-light-gray truncate">
-                      {chat.lastMessage}
+                      {isTyping && selectedChat === chat.id && chat.type === 'ai' 
+                        ? 'печатает...' 
+                        : chat.lastMessage
+                      }
                     </p>
                   </div>
                   
@@ -258,7 +479,7 @@ export default function Index() {
             <div className="relative">
               <Avatar className="h-10 w-10">
                 <AvatarFallback className="bg-telegram-blue text-white font-medium text-sm">
-                  {currentUser.name[0]}
+                  {currentUser?.name[0]}
                 </AvatarFallback>
               </Avatar>
               <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-telegram-online rounded-full border-2 border-white"></div>
@@ -266,13 +487,13 @@ export default function Index() {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1">
                 <span className="font-medium text-telegram-dark-gray text-sm">
-                  {currentUser.name}
+                  {currentUser?.name}
                 </span>
-                {currentUser.verified && (
+                {currentUser?.verified && (
                   <Icon name="CheckCircle" size={12} className="text-telegram-blue" />
                 )}
               </div>
-              <span className="text-xs text-telegram-light-gray">@{currentUser.username}</span>
+              <span className="text-xs text-telegram-light-gray">@{currentUser?.username}</span>
             </div>
             <Button variant="ghost" size="sm" className="text-telegram-light-gray hover:bg-gray-50">
               <Icon name="Settings" size={16} />
@@ -283,22 +504,27 @@ export default function Index() {
 
       {/* Chat Area */}
       <div className="flex-1 flex flex-col">
-        {selectedChat ? (
+        {selectedChatData ? (
           <>
             {/* Chat Header */}
             <div className="p-4 border-b border-gray-200 bg-white">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <Avatar className="h-10 w-10">
-                    <AvatarFallback className="bg-telegram-blue text-white font-medium text-sm">
-                      АС
+                    <AvatarFallback className={`${selectedChatData.type === 'ai' ? 'bg-gradient-to-br from-purple-500 to-blue-500' : 'bg-telegram-blue'} text-white font-medium text-sm`}>
+                      {selectedChatData.type === 'ai' ? '🤖' : selectedChatData.name.split(' ').map(n => n[0]).join('')}
                     </AvatarFallback>
                   </Avatar>
                   <div>
                     <div className="flex items-center gap-1">
-                      <span className="font-medium text-telegram-dark-gray">Анна Смирнова</span>
+                      <span className="font-medium text-telegram-dark-gray">{selectedChatData.name}</span>
+                      {selectedChatData.verified && (
+                        <Icon name="CheckCircle" size={14} className="text-telegram-blue" />
+                      )}
                     </div>
-                    <span className="text-sm text-telegram-online">онлайн</span>
+                    <span className="text-sm text-telegram-online">
+                      {isTyping && selectedChatData.type === 'ai' ? 'печатает...' : selectedChatData.online ? 'онлайн' : 'был в сети недавно'}
+                    </span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -318,46 +544,71 @@ export default function Index() {
             {/* Messages */}
             <ScrollArea className="flex-1 p-4">
               <div className="space-y-4">
-                {messages.map((message) => (
+                {selectedChatData.messages.map((message) => (
                   <div
                     key={message.id}
                     className={`flex ${message.sender === 'me' ? 'justify-end' : 'justify-start'}`}
                   >
-                    <div
-                      className={`max-w-xs lg:max-w-md px-4 py-2 rounded-2xl ${
-                        message.sender === 'me'
-                          ? 'bg-telegram-blue text-white'
-                          : 'bg-gray-100 text-telegram-dark-gray'
-                      }`}
-                    >
-                      <p className="text-sm">{message.text}</p>
-                      <p className={`text-xs mt-1 ${
-                        message.sender === 'me' ? 'text-blue-100' : 'text-telegram-light-gray'
-                      }`}>
-                        {message.time}
-                      </p>
+                    <div className="flex items-end gap-2 max-w-xs lg:max-w-md">
+                      {message.sender !== 'me' && (
+                        <Avatar className="h-8 w-8 mb-1">
+                          <AvatarFallback className={`${message.sender === 'ai' ? 'bg-gradient-to-br from-purple-500 to-blue-500' : 'bg-telegram-blue'} text-white text-xs`}>
+                            {message.sender === 'ai' ? '🤖' : (selectedChatData.name[0])}
+                          </AvatarFallback>
+                        </Avatar>
+                      )}
+                      <div
+                        className={`px-4 py-2 rounded-2xl ${
+                          message.sender === 'me'
+                            ? 'bg-telegram-blue text-white rounded-br-md'
+                            : message.sender === 'ai'
+                            ? 'bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-bl-md'
+                            : 'bg-gray-100 text-telegram-dark-gray rounded-bl-md'
+                        }`}
+                      >
+                        <p className="text-sm">{message.text}</p>
+                        <p className={`text-xs mt-1 ${
+                          message.sender === 'me' 
+                            ? 'text-blue-100' 
+                            : message.sender === 'ai'
+                            ? 'text-purple-100'
+                            : 'text-telegram-light-gray'
+                        }`}>
+                          {message.time}
+                        </p>
+                      </div>
                     </div>
                   </div>
                 ))}
+                <div ref={messagesEndRef} />
               </div>
             </ScrollArea>
 
             {/* Message Input */}
             <div className="p-4 border-t border-gray-200">
-              <div className="flex items-center gap-3">
-                <Button variant="ghost" size="sm" className="text-telegram-light-gray hover:bg-gray-50">
+              <div className="flex items-end gap-3">
+                <Button variant="ghost" size="sm" className="text-telegram-light-gray hover:bg-gray-50 mb-2">
                   <Icon name="Paperclip" size={18} />
                 </Button>
                 <div className="flex-1">
-                  <Input
+                  <Textarea
                     placeholder="Написать сообщение..."
-                    className="border-none bg-gray-50 focus:bg-gray-100"
+                    value={newMessage}
+                    onChange={(e) => setNewMessage(e.target.value)}
+                    onKeyPress={handleKeyPress}
+                    className="min-h-[40px] max-h-[120px] resize-none border-none bg-gray-50 focus:bg-gray-100"
+                    rows={1}
                   />
                 </div>
-                <Button variant="ghost" size="sm" className="text-telegram-light-gray hover:bg-gray-50">
+                <Button variant="ghost" size="sm" className="text-telegram-light-gray hover:bg-gray-50 mb-2">
                   <Icon name="Smile" size={18} />
                 </Button>
-                <Button size="sm" className="bg-telegram-blue hover:bg-blue-600">
+                <Button 
+                  size="sm" 
+                  className="bg-telegram-blue hover:bg-blue-600 mb-2"
+                  onClick={handleSendMessage}
+                  disabled={!newMessage.trim()}
+                >
                   <Icon name="Send" size={16} />
                 </Button>
               </div>
